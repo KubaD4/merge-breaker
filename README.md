@@ -14,6 +14,8 @@ Built for the Vultr Agent Runtime Hackathon (Stockholm, 27 November 2026).
 
 Live demo: **https://70-34-214-252.sslip.io**
 
+Demo video (about 3 minutes): [release v1.0](https://github.com/KubaD4/merge-breaker/releases/tag/v1.0) · [direct download](https://github.com/KubaD4/merge-breaker/releases/download/v1.0/merge-breaker-demo.mp4)
+
 Open the demo URL and click **Run on demo repo**. The full pipeline runs live on `demo-target/` (`tiny-shop-api`), a small API with planted bugs whose newest dependency, `color-pad`, contains a simulated credential-stealing `postinstall` script. Only the merge that triggers the run is simulated.
 
 The page shows each stage as it completes:
@@ -26,21 +28,17 @@ The page shows each stage as it completes:
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  U[Browser] -- HTTPS --> CP
-  GH[GitHub merge / push] -- webhook, HMAC --> CP
-  subgraph VM[Vultr Cloud Compute VM]
-    CP[Control plane, FastAPI<br/>plans, dispatches, verifies]
-    SB[Sandbox containers<br/>one per stage, destroyed after]
-    CP -- docker run --> SB
-  end
-  CP -- HTTPS, API key --> INF[Vultr Serverless Inference]
-```
+![Merge Breaker architecture](docs/architecture.png)
 
-- **Control plane** (`app/`): FastAPI on the VM. It serves the dashboard, queues runs, starts the containers, parses traces, calls the model and builds the verdict. It never executes repository code itself.
-- **Sandboxes** (`sandbox/`): one fresh container per stage, using the image in `sandbox/Dockerfile`. They optionally run under gVisor (`runsc`).
-- **Inference:** all model calls go to Vultr Serverless Inference (`https://api.vultrinference.com/v1`, OpenAI-compatible). Three models are used: `glm-5.3` (attack planning, script repair, report text; capped reasoning budget), `qwen3.8-27b` (automatic fallback) and `nemotron-3.5-content-safety` (prompt-injection voter).
+- **Caddy** terminates HTTPS in front of the control plane.
+- **Control plane** (`app/`, FastAPI on the Vultr VM). It never executes repository code. It has five parts:
+  - **Request guard:** per-visitor rate limit, a site-wide daily scan cap, and a repository size and visibility check through GitHub's API. Run history is private per browser, and run ids are random.
+  - **Orchestrator:** queues runs, starts one sandbox per stage, and parses the strace traces.
+  - **Injection scan:** pattern rules plus `nemotron-3.5-content-safety` vote on hidden instructions. Flagged lines are withheld from the agent.
+  - **Agent loop:** `glm-5.3` plans, writes and repairs attacks, with `qwen3.8-27b` as the fallback if it returns nothing. Repository content is marked as untrusted data.
+  - **Verdict engine:** decides block or allow from executed evidence only. The model writes the explanation, not the decision.
+- **Sandboxes** (`sandbox/`): a fresh gVisor (`runsc`) container per stage, built from `sandbox/Dockerfile`, destroyed afterwards. Only the fetch stage has network access, to clone from GitHub and download from npm, and it runs no repository code. Every other stage is offline.
+- **Inference:** all model calls go to Vultr Serverless Inference (`https://api.vultrinference.com/v1`, OpenAI-compatible), and only the control plane holds the key. The agent loop uses `glm-5.3` and `qwen3.8-27b`; the injection scan uses `nemotron-3.5-content-safety`.
 
 ## Containment
 
