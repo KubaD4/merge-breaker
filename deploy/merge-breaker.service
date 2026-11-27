@@ -1,0 +1,13 @@
+[Unit]
+Description=Merge Breaker control plane
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+WorkingDirectory=/opt/merge-breaker
+ExecStart=/opt/merge-breaker/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080 --proxy-headers
+Restart=always
+Environment=MB_DATA=/opt/merge-breaker/data
+
+[Install]
+WantedBy=multi-user.target

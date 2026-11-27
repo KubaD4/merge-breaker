@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Merge Breaker</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="mark">Merge Breaker</div>
+  <div class="meta" id="meta"></div>
+</header>
+
+<div class="layout">
+  <aside class="side">
+    <button id="runDemo" class="run">Run on demo repo</button>
+    <p class="note">A real run of the full pipeline on <span class="mono">tiny-shop-api</span>, a sample repo whose new dependency hides a credential-stealing install script. Only the merge that triggers it is simulated.</p>
+    <button id="customToggle" class="ghost custom-toggle" aria-expanded="false">Scan your own repository</button>
+    <div id="customPanel" class="custom" hidden>
+      <p class="note">Scanning another repository executes its code on this server and uses paid inference credits, so on this public demo it requires the owner's run token.</p>
+      <p class="note">To see the complete pipeline, use <b>Run on demo repo</b> above. It is not a recording: every stage runs live.</p>
+      <input id="repoUrl" placeholder="https://github.com/owner/repo" autocomplete="off">
+      <input id="token" placeholder="Run token" type="password" autocomplete="off">
+      <button id="runCustom" class="ghost">Scan</button>
+      <p class="err" id="customErr"></p>
+    </div>
+    <div class="label">Runs</div>
+    <ul id="jobs" class="jobs"></ul>
+  </aside>
+
+  <main class="main">
+    <section id="intro" class="intro">
+      <p>Merge Breaker tests a repository after each merge to main. The code is cloned into isolated containers, dependency install scripts are executed offline with decoy credentials, exported functions are fuzzed, and an agent writes and runs targeted attacks. A finding is reported only if an execution reproduced it.</p>
+      <ol class="steps-intro">
+        <li><span>Fetch</span>Clone, install with scripts disabled</li>
+        <li><span>Detonate</span>Install scripts run offline under trace</li>
+        <li><span>Fuzz</span>Hostile inputs into every export</li>
+        <li><span>Injection scan</span>Rules and a Vultr safety model vote on hidden instructions</li>
+        <li><span>Attack</span>AI writes exploits, sandbox runs them</li>
+        <li><span>Report</span>Verdict decided by rules, never by a model</li>
+      </ol>
+    </section>
+
+    <div id="job" hidden>
+      <section class="head">
+        <div class="verdict" id="verdict"></div>
+        <div class="sub" id="sub"></div>
+      </section>
+
+      <ol class="pipeline" id="stages"></ol>
+
+      <section class="block">
+        <h2>Supply chain</h2>
+        <div id="supply"></div>
+      </section>
+
+      <section class="block">
+        <h2>Findings <span class="count" id="fcount"></span></h2>
+        <p class="aside" id="plan"></p>
+        <div id="findings"></div>
+      </section>
+
+      <section class="block">
+        <h2>Containment</h2>
+        <div id="containment"></div>
+      </section>
+
+      <section class="block">
+        <details class="logwrap">
+          <summary><h2>Run log</h2></summary>
+          <div id="log" class="log"></div>
+        </details>
+      </section>
+    </div>
+  </main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

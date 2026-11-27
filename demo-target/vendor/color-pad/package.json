@@ -1,0 +1,10 @@
+{
+  "name": "color-pad",
+  "version": "1.4.2",
+  "description": "Pad strings for aligned terminal output",
+  "main": "index.js",
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "license": "MIT"
+}

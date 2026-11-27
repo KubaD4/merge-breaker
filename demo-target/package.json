@@ -1,0 +1,14 @@
+{
+  "name": "tiny-shop-api",
+  "version": "1.0.0",
+  "description": "Demo target for Merge Breaker: a small shop API with planted bugs and a malicious dependency",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "color-pad": "file:vendor/color-pad-1.4.2.tgz"
+  }
+}
