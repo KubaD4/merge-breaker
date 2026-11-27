@@ -38,8 +38,18 @@ def is_owner(request: Request) -> bool:
     return bool(RUN_TOKEN) and hmac.compare_digest(tok, RUN_TOKEN)
 
 
+def client_id(request: Request) -> str:
+    """Random id the browser generates and keeps in localStorage. Runs are only listed to the browser that started them."""
+    c = request.headers.get("X-Client-Id") or request.query_params.get("client") or ""
+    return c if re.fullmatch(r"[A-Za-z0-9-]{16,64}", c) else ""
+
+
 def visible(job, request) -> bool:
-    return job.repo == "demo" or is_owner(request)
+    """A run is visible to the browser that started it, and to the owner (run token)."""
+    if is_owner(request):
+        return True
+    c = client_id(request)
+    return bool(c) and getattr(job, "client", "") == c
 
 
 def rate_limit(ip, limit=8, window=3600):
@@ -80,7 +90,7 @@ async def create_job(request: Request):
     if sum(1 for j in pipeline.JOBS.values() if j.status in ("queued", "running")) >= 3:
         raise HTTPException(429, "Queue is full, please wait for the current run.")
     label = "tiny-shop-api (demo repo) · Merge PR #42" if repo == "demo" else repo
-    job = pipeline.submit(repo, trigger, label)
+    job = pipeline.submit(repo, trigger, label, client_id(request))
     return {"id": job.id}
 
 

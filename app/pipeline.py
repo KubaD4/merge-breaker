@@ -22,8 +22,9 @@ _sem = asyncio.Semaphore(int(os.environ.get("MB_MAX_JOBS", "1")))
 
 
 class Job:
-    def __init__(self, repo, trigger, label):
-        self.id = time.strftime("%H%M%S-") + uuid.uuid4().hex[:4]
+    def __init__(self, repo, trigger, label, client=""):
+        self.id = uuid.uuid4().hex[:16]  # unguessable: a run can only be opened by whoever has its id
+        self.client = client             # the browser that started it; history is private per browser
         self.repo = repo          # "demo" or https URL
         self.label = label
         self.trigger = trigger    # "button" | "merge (simulated)" | "github webhook"
@@ -60,7 +61,7 @@ class Job:
 
     def save(self):
         self.dir.mkdir(parents=True, exist_ok=True)
-        (self.dir / "job.json").write_text(json.dumps({**self.public(), "events": self.events}, indent=1))
+        (self.dir / "job.json").write_text(json.dumps({**self.public(), "client": self.client, "events": self.events}, indent=1))
 
 
 # ---------------------------------------------------------------- setup
@@ -91,6 +92,7 @@ def load_jobs():
         except Exception:
             continue
         j = Job.__new__(Job)
+        j.client = d.get("client", "")
         j.__dict__.update({k: d.get(k) for k in ("id", "repo", "label", "trigger", "status", "created", "stages", "ai",
                                                    "findings", "supply_chain", "containment", "report")})
         j.events = d.get("events", [])
@@ -101,8 +103,8 @@ def load_jobs():
         JOBS[j.id] = j
 
 
-def submit(repo, trigger, label):
-    job = Job(repo, trigger, label)
+def submit(repo, trigger, label, client=""):
+    job = Job(repo, trigger, label, client)
     JOBS[job.id] = job
     asyncio.create_task(_run(job))
     return job

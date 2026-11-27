@@ -4,8 +4,10 @@ let current = null, es = null, timer = null;
 const open = new Set();
 
 const tok = () => sessionStorage.getItem('mbToken') || '';
+// Each browser gets a random id; the server lists only the runs this browser started.
+const cid = (() => { let c = localStorage.getItem('mbClient'); if (!c) { c = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()); localStorage.setItem('mbClient', c); } return c; })();
 async function api(path, opts = {}) {
-  opts.headers = { ...(opts.headers || {}), ...(tok() ? { 'X-Run-Token': tok() } : {}) };
+  opts.headers = { ...(opts.headers || {}), 'X-Client-Id': cid, ...(tok() ? { 'X-Run-Token': tok() } : {}) };
   const r = await fetch(path, opts);
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
   return r.json();
@@ -25,7 +27,7 @@ async function loadJobs() {
     const cls = live(j.status) ? 'live' : j.status !== 'done' ? '' : (j.counts.malicious_packages || j.counts.findings) ? 'bad' : 'ok';
     const t = new Date(j.created * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     return `<li data-id="${j.id}" class="${j.id === current ? 'active' : ''}"><span class="nm"><span class="dot ${cls}"></span>${esc(j.label.split(' · ')[0].replace(' (demo repo)', '').replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, ''))}</span><span class="t">${t}</span></li>`;
-  }).join('') || '<li class="empty">No runs yet</li>';
+  }).join('') || '<li class="empty">No runs from this browser yet</li>';
   document.querySelectorAll('#jobs li[data-id]').forEach((li) => (li.onclick = () => openJob(li.dataset.id)));
 }
 
@@ -56,7 +58,7 @@ function openJob(id) {
   current = id; open.clear();
   $('#intro').hidden = true; $('#job').hidden = false; $('#log').innerHTML = '';
   if (es) es.close();
-  es = new EventSource(`/api/jobs/${id}/events` + (tok() ? `?token=${encodeURIComponent(tok())}` : ''));
+  es = new EventSource(`/api/jobs/${id}/events?client=${encodeURIComponent(cid)}` + (tok() ? `&token=${encodeURIComponent(tok())}` : ''));
   es.onmessage = (m) => { addLog(JSON.parse(m.data)); clearTimeout(timer); timer = setTimeout(refresh, 250); };
   es.addEventListener('end', () => { es.close(); refresh(); loadJobs(); });
   refresh(); loadJobs();
