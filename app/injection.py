@@ -12,7 +12,7 @@ from pathlib import Path
 from . import llm
 
 GUARD_MODEL = "nemotron-3.5-content-safety"
-SKIP_DIRS = {"node_modules", ".git", "dist", "build", "coverage"}
+SKIP_DIRS = {"node_modules", ".git", "dist", "build", "coverage", ".venv", "venv", "data", "__pycache__"}
 TEXT_EXT = {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".json", ".md", ".txt", ".yml", ".yaml", ".sh"}
 
 RULES = [
@@ -22,9 +22,17 @@ RULES = [
     (r"(mark|classify|label|treat) (this|the) (file|repo(sitory)?|code|merge|package) as (safe|clean|trusted|audited)", "asks the model to declare the code safe"),
     (r"block_merge\W{0,4}(to|=|:)\W{0,4}false", "tries to set the merge verdict"),
     (r"\b(you are now|act as|new system prompt|system prompt:)", "tries to change the model's role"),
-    (r"\b(curl|wget)\b[^\n|]{0,200}\|\s*(ba|z)?sh\b", "instructs a download piped into a shell"),
 ]
 COMPILED = [(re.compile(p, re.I), why) for p, why in RULES]
+# A download piped into a shell is normal in install scripts and docs; it only counts as injection
+# when it appears inside a code comment, where it can only be addressed to a reader such as an AI reviewer.
+PIPE_TO_SHELL = re.compile(r"\b(curl|wget)\b[^\n|]{0,200}\|\s*(ba|z)?sh\b", re.I)
+CODE_EXT = {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".sh", ".yml", ".yaml"}
+
+
+def _is_comment(line):
+    t = line.strip()
+    return t.startswith(("//", "/*", "*")) or (t.startswith("#") and not t.startswith("#!"))
 
 
 def _files(repo: Path, limit=40):
@@ -60,11 +68,12 @@ async def scan(repo: Path):
     for p in files:
         rel = str(p.relative_to(repo))
         for n, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
-            for rx, why in COMPILED:
-                if rx.search(line):
-                    rule_hits.append({"file": rel, "line": n, "text": line.strip()[:200], "why": why})
-                    redact.setdefault(rel, set()).add(n)
-                    break
+            why = next((w for rx, w in COMPILED if rx.search(line)), None)
+            if not why and p.suffix in CODE_EXT and _is_comment(line) and PIPE_TO_SHELL.search(line):
+                why = "a comment instructs a download piped into a shell"
+            if why:
+                rule_hits.append({"file": rel, "line": n, "text": line.strip()[:200], "why": why})
+                redact.setdefault(rel, set()).add(n)
 
     model_flags, model_error = {}, None
     if llm.enabled():
@@ -104,9 +113,9 @@ async def scan(repo: Path):
             title = f"Prompt injection attempt in {rel}"
             sev = "high"
         else:
-            ev = f"{GUARD_MODEL} classified {', '.join(model_flags[rel])} as prompt injection"
-            title = f"Content-safety model flagged {rel} as unsafe"
-            sev = "medium"
+            ev = f"{GUARD_MODEL} classified {', '.join(model_flags[rel])} as possible prompt injection; no rule matched"
+            title = f"Possible prompt injection in {rel} (model only, review)"
+            sev = "low"
         findings.append({"id": f"inj-{rel}", "source": "injection-scan", "severity": sev, "title": title, "target": rel,
                          "category": "prompt-injection", "evidence": ev, "reproduced": True, "voters": voters,
                          "agreement": "both voters" if both else "one voter",
