@@ -22,7 +22,7 @@ The page shows each stage as it completes:
 - the bugs found by the fuzzer and by the agent
 - the containers that ran, with their limits and the fact that each was destroyed
 
-**Scan your own repository** runs on any public npm repository. Because it executes that repository's code and spends inference credits, the public demo requires the owner's run token.
+**Scan your own repository** runs the same pipeline on any public GitHub repository (Node.js / npm). On the live demo it is open to everyone. Each browser sees only its own runs, and scans are limited per visitor, per day across the site, and by repository size.
 
 ## Architecture
 
@@ -52,7 +52,7 @@ flowchart LR
 | Network | Every stage that executes repository code runs with `--network none`. The fetch stage has network access but runs nothing (`--ignore-scripts`). Host firewall rules drop container traffic to private ranges and the metadata service. |
 | Lifecycle | Each container is removed after its stage, and the cloned repository is deleted when the run ends. |
 | Prompt injection | Repository content is scanned by rules and a content-safety model before the agent sees it. Flagged lines are withheld, and the prompt marks the repository as untrusted data. The verdict is computed by rules, so a hijacked model cannot approve a merge. Anything the model writes still runs only in the offline sandbox. |
-| Abuse | Public visitors can run only the demo repository. Arbitrary repositories need a run token, and webhooks need a valid HMAC signature and an allowlisted repository. Runs are rate-limited and queued. |
+| Abuse | Repository scans are either open to everyone (`MB_OPEN_SCANS=1`) or gated by the owner's run token. When open, they are capped per visitor, per day site-wide (`MB_DAILY_SCANS`) and by repository size (`MB_MAX_REPO_MB`, checked through GitHub's API before cloning). Run history is private to the browser that started a run, and run ids are random. Webhooks need a valid HMAC signature and an allowlisted repository. Runs are queued, one at a time. |
 
 ## Running it
 
@@ -85,7 +85,9 @@ ssh root@<ip> 'bash /opt/merge-breaker/deploy/setup.sh <ip-with-dashes>.sslip.io
 | `MB_MODEL`, `MB_FALLBACK_MODEL` | Primary and fallback models |
 | `MB_REASONING_TOKENS` | Cap on the model's reasoning budget |
 | `MB_RUNTIME` | `runsc` to run sandboxes under gVisor |
-| `MB_RUN_TOKEN` | Unlocks scanning arbitrary repositories |
+| `MB_RUN_TOKEN` | Owner token: sees all runs; required for repository scans when they are not open |
+| `MB_OPEN_SCANS` | `1` lets anyone scan a public GitHub repository without a token; `0` requires the run token |
+| `MB_DAILY_SCANS`, `MB_MAX_REPO_MB` | Site-wide daily scan cap and maximum repository size for open scans |
 | `MB_WEBHOOK_SECRET`, `MB_ALLOWED_REPOS` | GitHub webhook: merges to the default branch trigger a run |
 
 ## Repository layout

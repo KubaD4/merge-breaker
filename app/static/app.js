@@ -13,8 +13,13 @@ async function api(path, opts = {}) {
   return r.json();
 }
 
+let openScans = false;
 async function loadConfig() {
   const c = await api('/api/config');
+  openScans = !!c.open_scans;
+  if (openScans) {
+    $('#token').hidden = true; $('#noteToken').hidden = true; $('#noteDemo').hidden = true; $('#noteOpen').hidden = false;
+  }
   $('#meta').innerHTML = `<span>Model <b>${esc(c.model)}</b></span><span>Inference <b>Vultr Serverless</b></span><span>Sandbox <b>${c.runtime === 'runsc' ? 'Docker + gVisor' : 'Docker'}</b></span>`;
 }
 
@@ -46,12 +51,13 @@ $('#runCustom').onclick = async () => {
   const repo = $('#repoUrl').value.trim(), token = $('#token').value.trim();
   $('#customErr').textContent = '';
   if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/.test(repo)) { $('#customErr').textContent = 'Enter a GitHub URL like https://github.com/owner/repo.'; return; }
-  if (!token) { $('#customErr').textContent = 'A run token is required. Use Run on demo repo to see the full pipeline.'; return; }
+  if (!token && !openScans) { $('#customErr').textContent = 'A run token is required. Use Run on demo repo to see the full pipeline.'; return; }
   try {
     const { id } = await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo, token, trigger: 'manual' }) });
-    sessionStorage.setItem('mbToken', token);
+    if (token) sessionStorage.setItem('mbToken', token);
     openJob(id);
   } catch (e) { $('#customErr').textContent = /token/i.test(e.message) ? 'That token is not valid. Use Run on demo repo to see the full pipeline.' : e.message; }
+  $('#runCustom').disabled = false;
 };
 
 function openJob(id) {

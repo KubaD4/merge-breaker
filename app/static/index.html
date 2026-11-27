@@ -18,8 +18,9 @@
     <p class="note">A real run of the full pipeline on <span class="mono">tiny-shop-api</span>, a sample repo whose new dependency hides a credential-stealing install script. Only the merge that triggers it is simulated.</p>
     <button id="customToggle" class="ghost custom-toggle" aria-expanded="false">Scan your own repository</button>
     <div id="customPanel" class="custom" hidden>
-      <p class="note">Scanning another repository executes its code on this server and uses paid inference credits, so on this public demo it requires the owner's run token.</p>
-      <p class="note">To see the complete pipeline, use <b>Run on demo repo</b> above. It is not a recording: every stage runs live.</p>
+      <p class="note" id="noteToken">Scanning another repository executes its code on this server and uses paid inference credits, so on this public demo it requires the owner's run token.</p>
+      <p class="note" id="noteOpen" hidden>Paste a public GitHub repository (Node.js / npm). It is cloned and attacked in the same throwaway sandboxes as the demo. Scans are limited per visitor and per day, and your results are visible only in this browser.</p>
+      <p class="note" id="noteDemo">To see the complete pipeline, use <b>Run on demo repo</b> above. It is not a recording: every stage runs live.</p>
       <input id="repoUrl" placeholder="https://github.com/owner/repo" autocomplete="off">
       <input id="token" placeholder="Run token" type="password" autocomplete="off">
       <button id="runCustom" class="ghost">Scan</button>

@@ -16,7 +16,11 @@ from fastapi.staticfiles import StaticFiles
 from . import llm, pipeline, sandbox
 
 STATIC = Path(__file__).resolve().parent / "static"
-RUN_TOKEN = os.environ.get("MB_RUN_TOKEN", "")            # needed to scan arbitrary repos
+RUN_TOKEN = os.environ.get("MB_RUN_TOKEN", "")            # owner token: sees all runs; needed for repo scans unless open
+# Switch: 1 = anyone may scan a public GitHub repo without a token; 0 = repo scans need the owner's run token.
+OPEN_SCANS = os.environ.get("MB_OPEN_SCANS", "0").strip() == "1"
+DAILY_SCANS = int(os.environ.get("MB_DAILY_SCANS", "40"))  # site-wide cap on repo scans per 24 h (owner exempt)
+MAX_REPO_MB = int(os.environ.get("MB_MAX_REPO_MB", "150"))
 WEBHOOK_SECRET = os.environ.get("MB_WEBHOOK_SECRET", "")
 ALLOWED_REPOS = {r.strip().lower() for r in os.environ.get("MB_ALLOWED_REPOS", "").split(",") if r.strip()}
 GITHUB_URL = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+?(\.git)?/?$")
@@ -73,7 +77,22 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 @app.get("/api/config")
 async def config():
     return {"model": llm.MODEL, "ai_enabled": llm.enabled(), "inference_base_url": llm.BASE_URL,
-            "runtime": sandbox.RUNTIME or "runc", "custom_repos": bool(RUN_TOKEN), "webhook": bool(WEBHOOK_SECRET)}
+            "runtime": sandbox.RUNTIME or "runc", "custom_repos": bool(RUN_TOKEN) or OPEN_SCANS,
+            "open_scans": OPEN_SCANS, "webhook": bool(WEBHOOK_SECRET)}
+
+
+def _github_repo_info(full):
+    """Public metadata from GitHub's API (no auth). Returns dict, None if not found/private, or {} if unknown."""
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(f"https://api.github.com/repos/{full}", headers={"User-Agent": "merge-breaker", "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return None if e.code == 404 else {}
+    except Exception:
+        return {}
 
 
 @app.post("/api/jobs")
@@ -81,11 +100,22 @@ async def create_job(request: Request):
     body = await request.json()
     repo = (body.get("repo") or "demo").strip()
     trigger = body.get("trigger") or "button"
+    owner = bool(RUN_TOKEN) and hmac.compare_digest(str(body.get("token", "")), RUN_TOKEN)
     if repo != "demo":
-        if not RUN_TOKEN or not hmac.compare_digest(str(body.get("token", "")), RUN_TOKEN):
+        if not (OPEN_SCANS or owner):
             raise HTTPException(403, "Scanning custom repos needs the run token (public visitors can run the demo repo).")
         if not GITHUB_URL.match(repo):
             raise HTTPException(400, "Only https://github.com/<owner>/<repo> URLs are accepted.")
+        if not owner:
+            day = time.time() - 86400
+            if sum(1 for j in pipeline.JOBS.values() if j.repo != "demo" and (j.created or 0) > day) >= DAILY_SCANS:
+                raise HTTPException(429, "The daily limit for repository scans on this demo has been reached. Try again tomorrow, or use Run on demo repo.")
+            full = re.sub(r"(\.git)?/?$", "", repo.split("github.com/", 1)[1])
+            info = await asyncio.to_thread(_github_repo_info, full)
+            if info is None or (info and info.get("private")):
+                raise HTTPException(400, "That repository was not found or is not public.")
+            if info and info.get("size", 0) > MAX_REPO_MB * 1024:
+                raise HTTPException(400, f"That repository is larger than {MAX_REPO_MB} MB, the limit for this demo.")
     rate_limit(request.client.host if request.client else "?")
     if sum(1 for j in pipeline.JOBS.values() if j.status in ("queued", "running")) >= 3:
         raise HTTPException(429, "Queue is full, please wait for the current run.")
